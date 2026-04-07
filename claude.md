@@ -60,6 +60,17 @@ Keep this list focused. You can add "Nice to have" separately below.]
   - "Must not support payments in crypto."]
 ```
 
+### Technology Preferences
+```
+[PLACEHOLDER — If you have already decided on any tools or platforms, state them here.
+Claude will respect these decisions and update this file as more decisions are made. Examples:
+  - "Deploy to Cloudflare Pages."
+  - "Use Supabase for the database and auth."
+  - "Use Resend for email."
+  - "Use Stripe for payments."
+Leave blank if you have no preferences — Claude will choose sensible defaults.]
+```
+
 ---
 
 ## 2. Tech Stack
@@ -86,7 +97,6 @@ Claude MUST follow these rules before adding any external dependency:
 5. **One library per problem.** Never install two libraries that solve the same problem.
 6. **Always use the latest stable version.** When adding or upgrading any library, tool, or framework, always install the latest stable release. Never pin to an old version without a documented reason. Keep dependencies up to date — running behind on versions is a security and compatibility risk.
 7. **No abandonware.** Libraries must have been updated within the last 12 months and have >100k weekly npm downloads unless there is a compelling reason.
-8. **Document every addition** in the `## Dependency Log` section at the bottom of this file.
 
 ---
 
@@ -94,15 +104,13 @@ Claude MUST follow these rules before adding any external dependency:
 
 Claude must follow these architectural patterns on every task:
 
-- **Monorepo structure** with clear separation: `apps/web`, `apps/api`, `packages/shared`.
 - **12-Factor App** principles: config via environment variables, stateless processes, explicit dependencies.
 - **API-first**: All business logic lives in the API layer. The frontend is a thin UI layer only.
 - **Thin controllers, fat services**: Route handlers/controllers do nothing except validate input and call a service. Business logic lives in service classes/functions.
 - **No logic in the database**: No stored procedures or triggers. Migrations only change schema.
 - **Feature folders**: Code is organised by feature, not by type (no giant `utils/` or `helpers/` folders).
 - **Explicit over implicit**: No magic. Every import is explicit. No barrel files that re-export everything.
-- **Environment parity**: Dev, staging, and production environments must be as similar as possible.
-- **Never hardcode secrets**: All secrets, API keys, and credentials go in `.env` files and are never committed.
+- **Right-size the architecture**: Do not introduce monorepos, microservices, or complex infrastructure patterns unless the project explicitly requires them. Start simple and scale when there is a proven need.
 
 ---
 
@@ -127,13 +135,10 @@ Claude must follow these architectural patterns on every task:
 - Branch naming convention: `feat/short-description`, `fix/short-description`, `chore/short-description`.
 - Branches are merged into `main` via a Pull Request only, after CI passes and (where applicable) a review is completed.
 - Delete branches after merging — keep the repo clean.
-- For larger pieces of work, branch off a `develop` branch and merge `develop` into `main` for releases.
 
 ---
 
 ## 5. Code Quality Standards — NON-NEGOTIABLE
-
-
 
 These rules apply to every single file Claude writes or modifies.
 
@@ -157,6 +162,17 @@ Claude must write tests as part of every feature, not as an afterthought.
 - **Mocking rules**: Only mock external I/O (HTTP calls, email, third-party APIs). Never mock the module under test.
 - **Test data**: Use factories (e.g., `@anatine/zod-mock` or hand-written builders), never hard-coded magic strings.
 
+### Security Testing
+Security controls must be proven by tests, not just implemented. Claude must write the following security tests for every relevant feature:
+
+- **Auth boundary tests**: every protected route must be tested with no token, an expired token, and a valid token belonging to a different user. All three must be rejected.
+- **Authorisation tests**: user A must not be able to read, edit, or delete user B's resources. Test this explicitly for every resource type — do not rely solely on middleware.
+- **Input validation tests**: every API endpoint must be tested with missing fields, wrong types, oversized payloads, and malicious strings (SQL injection patterns, script tags). All must be rejected with a 400, never a 500.
+- **Rate limiting tests**: verify that endpoints with rate limits actually block requests after the threshold is reached.
+- **Webhook integrity tests**: verify that webhook endpoints reject payloads with invalid or missing signatures.
+
+These tests are not optional and count toward the 80% coverage gate. Critical auth and payment paths must be fully covered regardless of the overall percentage.
+
 ### Code Style
 - ESLint + Prettier. Config committed to the repo. Claude must not disable lint rules inline without a comment explaining why.
 - Max file length: 300 lines. If a file exceeds this, refactor into smaller modules.
@@ -167,22 +183,17 @@ Claude must write tests as part of every feature, not as an afterthought.
 - `TODO` comments must include a GitHub issue number: `// TODO(#42): refactor after API v2`.
 
 ### Git Commit Convention
-Follow [Conventional Commits](https://www.conventionalcommits.org/):
-```
-feat(auth): add email verification on signup
-fix(api): return 400 instead of 500 on invalid input
-chore(deps): upgrade zod to 3.23
-test(payments): add integration tests for webhook handler
-```
+Follow [Conventional Commits](https://www.conventionalcommits.org/) for all commits.
 
 ---
 
 ## 6. Security — Non-Negotiable Requirements
 
-Security is not optional. Claude must apply every item below by default, without being asked.
-
 ### OWASP Top 10
 All code must comply with the current [OWASP Top 10](https://owasp.org/www-project-top-ten/). Claude knows what this standard requires and must apply the appropriate mitigations for every risk category by default, without being asked.
+
+### GDPR & Data Privacy
+If the app collects personal data from users in the EU — which should be assumed by default — GDPR applies. Claude must: collect only the minimum personal data needed for each feature (data minimisation); ensure users can request deletion of their data; never store personal data longer than necessary; flag any new feature that introduces new personal data collection and confirm how it is handled before implementing it. When in doubt, treat the data as personal and apply the stricter standard.
 
 ### Additional Web Security Headers
 Claude must configure the following HTTP headers on every response:
@@ -195,22 +206,15 @@ Referrer-Policy: strict-origin-when-cross-origin
 Permissions-Policy: geolocation=(), microphone=(), camera=()
 ```
 
-### Secrets Management
-- All secrets in `.env.local` (dev) and the hosting platform's secrets manager (prod).
-- `.env` files committed to git must contain **only** non-sensitive defaults and comments.
-- `.env*.local` must be in `.gitignore`.
-- Rotate all secrets if a `.env.local` file is ever accidentally committed.
-
 ### Input/Output Rules
-- All user-supplied data is untrusted until validated by a Zod schema.
+- Every input is untrusted until validated. No exceptions: API parameters, query strings, request bodies, headers, file uploads, webhook payloads — all must pass through a Zod schema before any business logic touches them.
+- Validation must happen server-side. Client-side validation is UX only and must never be relied upon for security.
 - All HTML rendered from user data must be escaped. Never use `dangerouslySetInnerHTML` with user data.
 - File uploads: validate MIME type server-side (not just by extension), enforce max size, store in object storage (never on the local filesystem), scan with an antivirus API if the file will be shared with other users.
 
 ---
 
 ## 7. GitHub Pull Request & CI/CD Security Checks
-
-Every PR must pass all of the following automated checks before merge. Claude must generate the GitHub Actions workflow file that enforces these.
 
 ### Required GitHub Actions Checks
 
@@ -252,16 +256,8 @@ Every PR must pass all of the following automated checks before merge. Claude kn
 
 ## 9. Logging, Observability & Error Handling
 
-Good logging is what allows you to understand what your app is doing, debug problems quickly, and prove what happened when something goes wrong. Claude must implement all of the following by default.
-
 ### Logging Tool
 Use `pino` as the structured logger. It outputs JSON, is fast, and works well with all major log aggregation platforms (Datadog, Logtail, Grafana Loki, etc.). No `console.log` anywhere in committed code — ever.
-
-### Log Levels — Use the Right One
-- `error` — Something broke and needs attention. Always include the full error object.
-- `warn` — Something unexpected happened but the app recovered. Worth investigating.
-- `info` — A significant thing happened normally (user logged in, payment completed, job finished).
-- `debug` — Detailed information useful during development. Must be disabled in production by default.
 
 ### Required Fields on Every Log Line
 Every log entry must include: `timestamp`, `level`, `requestId` (a unique ID per HTTP request), `userId` (if the user is authenticated), `service` (name of the app/service), and `message`. This makes it possible to trace exactly what happened and who triggered it.
@@ -312,7 +308,7 @@ Expose `GET /health` returning `{ status: "ok", version: string, uptime: number 
 - Soft deletes (add `deleted_at` column) for any user-facing entity — never hard-delete user data unless legally required.
 - Database connection pooling configured appropriately for the hosting environment.
 - Never run migrations automatically on app startup in production. Run as a separate deploy step.
-- Backup policy: automated daily backups, tested monthly restore drill.
+- Backup policy: automated daily backups retained for at least 30 days.
 
 ---
 
@@ -323,63 +319,33 @@ Claude must keep the following documentation up to date:
 - **`README.md`**: Project overview, prerequisites, local setup steps (must work for a non-engineer), environment variables reference, how to run tests, how to deploy.
 - **`docs/architecture.md`**: High-level diagram of services, data flow, and external integrations.
 - **`docs/api.md`**: All API endpoints documented with request/response examples.
-- **`docs/runbook.md`**: How to handle common operational issues (db connection down, high error rate, etc.).
 - Every exported function must have a JSDoc comment explaining what it does, its parameters, and its return value.
 
 ---
 
 ## 12. Claude Behaviour Rules
 
-These rules govern how Claude must behave on every task in this project:
-
 1. **Ask before assuming.** If requirements are ambiguous, ask one clarifying question before writing any code.
 2. **Plan before coding.** For any task touching more than one file, output a short bullet-point plan and wait for confirmation before proceeding.
 3. **No gold-plating.** Only build what is asked. Do not add unrequested features, even if they seem useful.
 4. **Explain decisions.** When making a technical choice (library, pattern, schema design), briefly state why.
 5. **Flag risks.** If implementing a feature as described would introduce a security or reliability issue, say so before coding it, and propose a safer approach.
-6. **Atomic commits.** Each task should result in a coherent, reviewable change — not a thousand-line mega-diff.
-7. **Always run the linter and type-checker mentally.** Do not produce code that you know will fail `eslint` or `tsc`.
-8. **Test coverage is not optional.** Every new function or component must come with tests. Do not ask if tests are needed.
-9. **Respect the dependency policy.** Do not add a new npm package without explicitly stating the justification (per Section 2 — Third-Party Libraries Policy) and adding it to the Dependency Log below.
-10. **Security by default.** Apply the controls in Section 5 without being asked every time.
+6. **Each task is a coherent change.** Do not produce thousand-line diffs. Break large tasks into reviewable steps.
+7. **Test coverage is not optional.** Every new function or component must come with tests. Do not ask if tests are needed.
+8. **Respect the dependency policy.** Do not add a new npm package without explicitly stating the justification in plain English (per Section 2 — Third-Party Libraries Policy).
+9. **Security by default.** Apply the controls in Section 6 without being asked every time.
 
 ---
 
 ## 13. Deployment & Environments
 
-### Environment Variables
-```
-[PLACEHOLDER — List all environment variables your app needs. Example:
-  DATABASE_URL=         # PostgreSQL connection string
-  REDIS_URL=            # Redis connection string (if used)
-  NEXTAUTH_SECRET=      # 32-char random secret for auth
-  STRIPE_SECRET_KEY=    # Stripe API secret key
-  STRIPE_WEBHOOK_SECRET=# Stripe webhook signing secret
-  SENDGRID_API_KEY=     # Email provider key
-  SENTRY_DSN=           # Error monitoring
-  NEXT_PUBLIC_APP_URL=  # Public base URL of the app
-Claude will add to this list as the project grows.]
-```
-
-### Environments
-| Environment | Purpose | Auto-deploy from |
-|---|---|---|
-| `development` | Local dev | — |
-| `preview` | PR previews | any open PR |
-| `staging` | Pre-release testing | `develop` branch |
-| `production` | Live users | `main` branch (manual approval) |
+- Never deploy manually. Every change reaches production through GitHub Actions only.
+- Set up two environments: `local` (development and testing) and `production` (live users). Add staging only if explicitly requested.
+- GitHub Actions must run on every PR: lint, type check, tests, security scans (Semgrep, TruffleHog, SCA). All must pass before merge.
+- GitHub Actions deploys to production automatically on every merge to `main`.
+- All secrets stored in GitHub Actions secrets and the hosting platform's secret manager — never in code.
+- Local environment must never point at the production database or any live service.
 
 ---
 
-## Dependency Log
-
-> Claude must add a row here every time a new npm dependency is added.
-
-| Package | Version | Purpose | Why not native? | Added on |
-|---|---|---|---|---|
-| *(none yet)* | | | | |
-
----
-
-*This file was last updated: [PLACEHOLDER — add date when you fill it in]*
-*Project owner: [PLACEHOLDER — your name or team name]*
+*Authored by: Santiago Kantorowicz*
